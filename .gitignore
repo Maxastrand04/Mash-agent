@@ -1,5 +1,12 @@
 .venv
 
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+
 #Claude agent testing
 /Claude_testing/*
 .claude/*
