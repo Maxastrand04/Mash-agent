@@ -1,0 +1,41 @@
+=== move_with_dest ===
+Run: mv ./report.pdf ./reports/
+
+=== move_no_dest ===
+Run: mv ./report.pdf ./
+
+=== copy ===
+Run: cp ./report.pdf ./reports/
+
+=== rename_same_ext ===
+Run: mv ./report.pdf ./summary.pdf
+
+=== rename_diff_ext ===
+Run: mv ./report.pdf ./summary.txt
+
+=== delete_file ===
+Run: rm ./report.pdf
+
+=== delete_folder ===
+Run: rm -rf ./reports
+
+=== create_file_with_ext ===
+Run: touch ./app.js
+
+=== create_file_no_ext ===
+Run: touch ./utils.txt
+
+=== create_folder ===
+Run: mkdir -p ./archive
+
+=== list ===
+Run: ls -la .
+
+=== open ===
+Run: open ./report.pdf
+
+=== cat ===
+Run: cat ./notes.txt
+
+=== chmod ===
+Run: chmod 755 ./src/main.py

@@ -1,0 +1,2 @@
+[console_scripts]
+mash = mash.main:run

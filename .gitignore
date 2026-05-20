@@ -1,0 +1,5 @@
+.venv
+
+#Claude agent testing
+/Claude_testing/*
+.claude/*
