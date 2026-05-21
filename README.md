@@ -1,32 +1,27 @@
-# Mash agent
+# Mash
 
-A bash command AI agent who lives in your terminal. Exist for the people who are not really comfortable with bash commands and/or the terminal. 
-
-Mash exist to convert a plain english message into a functional bash command!
-
-## Local LLM
-
-Mash uses a local LLM downloaded from `Ollama`. Right now it uses `qwen2.5-coder:7b` model but it should work with any model really. 
-
-The agent takes input from user then uses the local LLM to understand what user wants to do. 
-After that it runs through some python scripts to give a consistent and correct bash format as output. 
-
-Example input in a terminal:
+A bash command agent that lives in your terminal. Designed for people who are not comfortable with bash commands — type what you want to do in plain English and Mash figures out the rest.
 
 ```
 mash create a new file called bob
 ```
-## Python convertion
 
-In order to ensure the output stays consistent since a tiny local LLM can be very unpredictable it will run through some python scripts. 
-These scripts will ensure the formatting of bash command is correct for what user wants to do. 
+---
 
-The python scripts also allows user to add additional information when Mash is in doubt. For example:
+## How it works
+
+**1. Local LLM via Ollama**
+
+Mash uses a local LLM (currently `qwen2.5-coder:7b`) to understand what you want to do. No internet connection required, no API tokens consumed — everything runs on disk.
+
+**2. Python post-processing**
+
+Since small local models can be unpredictable, the LLM output is passed through Python scripts that enforce consistent, correct bash formatting. This layer also drives interactive menus when Mash needs more information:
 
 ```
 Where should the new file/folder be created?
 
-  1. destination/to/my/folder  (Current directory)
+  1. /path/to/my/folder  (Current directory)
 
 Select option [1], Enter to cancel, type name for other destination: 1
 
@@ -37,31 +32,30 @@ What file extension?
 Select extension [1-1], type one manually (with or without dot), or Enter to cancel: .py
 ```
 
-## Output
+**3. Confirmation before execution**
 
-The final output after mash has full picture of what user wants to do is the bash command for doing the task user wants. For example:
+Once Mash has the full picture, it shows you the exact shell command and asks before running anything:
 
 ```
 Run: touch ./bob.py
 [y/N]
 ```
 
-# Why create this?
+---
 
-I am horribly bad at remembering bash commands and to make life easier I wanted a tool to help me remembering.
-I feel like a tiny local agent that exist completely on disk with only one task can be very useful both for developers who have not mastered the terminal and beginners who wants help.
+## Why Mash?
 
-## Why not use an agent like claude code? Github copilot? 
+Remembering bash syntax is annoying. A tiny local agent with one job — turn plain English into shell commands — is useful for developers who haven't mastered the terminal and beginners who want a guided experience.
 
-Well one reason, API tokens. I do not want to waste my API tokens on a simple task as to find/create/remove files etc. 
-This agent can live and run completely locally without ever reaching the internet which also ensures your files and privacy does not leak in to the wrong peoples hands. 
+**Why not just use Claude Code or GitHub Copilot?**
 
-# Project state
+- **No API costs.** Mash runs entirely on your machine using a local model — no cloud credits consumed, no subscription required.
+- **Your files stay private.** Nothing is sent over the network. Your file names, paths, and contents never leave your machine.
 
-As of right now the agent works! it runs locally and needs you to run `ollama serve` in a terminal for it to work. This will change in future scope!
+---
 
-Right now it runs in a `.venv` but that will also be changed for final product.
+## Project state
 
-User preferences is not implemented yet... Final product will let user select model themselves, mash behaviour (unambiguous menus or just output) etc. 
+Mash works. It currently requires `ollama serve` to be running in a separate terminal — that will change in a future release. It also runs inside a `.venv` for now.
 
-Right now it is a good prototype of the product. 
+Not yet implemented: user-selectable model, configurable behaviour (e.g. skip menus / just output the command). These are planned for the final product.
