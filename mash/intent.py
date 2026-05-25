@@ -27,6 +27,13 @@ _FILENAME_RE = re.compile(r'^[A-Za-z0-9_\-]+\.[A-Za-z0-9]{1,10}$')
 
 @dataclass
 class Intent:
+    """Parsed user request, normalized into verb + structured args.
+
+    Centralizing intent shape here keeps the flow modules free of raw
+    token-parsing — they receive a pre-classified Intent and only need
+    to consume the fields relevant to their verb.
+    """
+
     verb: str
     args: list[str]
     filtered_args: list[str]
@@ -37,10 +44,39 @@ class Intent:
 
 
 def _looks_like_filename(token: str) -> bool:
+    """Heuristic check for stem.ext-shaped tokens.
+
+    The regex matches `name.ext` where ext is 1-10 alphanumerics — wide
+    enough for common extensions but tight enough to reject IPs, version
+    strings, and sentence fragments.
+
+    Args:
+        token: Single argument token to test.
+
+    Returns:
+        True when the token matches the filename regex.
+
+    Raises:
+        None.
+    """
     return bool(_FILENAME_RE.match(token))
 
 
 def _find_rename_verb_start(args: list[str]) -> int | None:
+    """Locate the latest rename-verb phrase in args.
+
+    Returns the latest match so prompts like "move foo to bar then
+    rename it to baz" treat the trailing rename as authoritative.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        Start index of the latest matching rename phrase, or None.
+
+    Raises:
+        None.
+    """
     lower = [a.lower() for a in args]
     last_idx = None
     for phrase in _RENAME_VERBS:
@@ -54,11 +90,41 @@ def _find_rename_verb_start(args: list[str]) -> int | None:
 
 
 def _detect_rename_intent(args: list[str]) -> bool:
+    """Test whether the prompt contains any known rename phrase.
+
+    Uses a substring check against the joined args so multi-word phrases
+    like "change name" match regardless of token boundaries.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        True when a rename phrase is present.
+
+    Raises:
+        None.
+    """
     joined = " ".join(args).lower()
     return any(phrase in joined for phrase in _RENAME_VERBS)
 
 
 def _extract_rename_target(args: list[str]) -> str | None:
+    """Extract the new name following the final "to" after a rename verb.
+
+    Looks only at "to" markers occurring at or after the rename verb so
+    earlier "to" markers (e.g. a move destination) don't get misread as
+    the new name.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        The token after the latest "to", or None when no rename or no
+        target token is present.
+
+    Raises:
+        None.
+    """
     rename_start = _find_rename_verb_start(args)
     if rename_start is None:
         return None
@@ -73,6 +139,20 @@ def _extract_rename_target(args: list[str]) -> str | None:
 
 
 def _detect_destination_idx(args: list[str]) -> int | None:
+    """Find the destination token following a preposition marker.
+
+    Skips intervening articles ("the", "a", …) so "move foo to the bar
+    folder" still points at "bar".
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        Index of the destination token, or None when no marker is found.
+
+    Raises:
+        None.
+    """
     markers = {"to", "into", "inside", "in"}
     for i, word in enumerate(args):
         if word.lower() in markers:
@@ -85,6 +165,21 @@ def _detect_destination_idx(args: list[str]) -> int | None:
 
 
 def _detect_destination_idx_before_rename(args: list[str]) -> int | None:
+    """Like _detect_destination_idx but stops at the rename verb.
+
+    Prevents the "to" inside "rename X to Y" from being misread as a
+    move destination — the destination must appear before the rename
+    verb to count.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        Destination index strictly before the rename verb, or None.
+
+    Raises:
+        None.
+    """
     rename_start = _find_rename_verb_start(args)
     if rename_start is None:
         return _detect_destination_idx(args)
@@ -102,6 +197,23 @@ def _detect_destination_idx_before_rename(args: list[str]) -> int | None:
 
 
 def _detect_new_filename(args: list[str]) -> tuple[str, str] | None:
+    """Extract a (raw_name, extension) tuple from a "create … named X" prompt.
+
+    Two-token minimum on the raw name is enforced so single-word names
+    fall through to the bare-create branch (which has its own filename
+    format menu).
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        (raw_name, extension) where extension has a leading dot or is
+        empty; None when no "called"/"named" marker is present or the
+        name is too short.
+
+    Raises:
+        None.
+    """
     create_words = {"create", "make"}
     if not args or args[0].lower() not in create_words:
         return None
@@ -131,6 +243,21 @@ def _detect_new_filename(args: list[str]) -> tuple[str, str] | None:
 
 
 def _is_list_intent(args: list[str]) -> bool:
+    """Detect listing prompts.
+
+    Recognizes both verb-first forms ("list …", "ls …") and natural
+    paraphrases ("show files in …", "show contents …") so users get
+    the listing flow without having to memorize the verb.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        True when the prompt should route to list_flow.
+
+    Raises:
+        None.
+    """
     if not args:
         return False
     if args[0].lower() in _LIST_TRIGGERS:
@@ -140,10 +267,36 @@ def _is_list_intent(args: list[str]) -> bool:
 
 
 def _is_open_intent(args: list[str]) -> bool:
+    """Detect open-with-system-handler prompts.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        True when the prompt starts with an open trigger word.
+
+    Raises:
+        None.
+    """
     return bool(args) and args[0].lower() in _OPEN_TRIGGERS
 
 
 def _is_cat_intent(args: list[str]) -> bool:
+    """Detect file-printing prompts.
+
+    "show contents of" overlaps with the listing detector ("show
+    contents"); cat is checked first in parse_intent so this stays a
+    safe-by-order heuristic rather than requiring lookbehind.
+
+    Args:
+        args: Tokenized prompt.
+
+    Returns:
+        True when the prompt should route to cat in open_cat_flow.
+
+    Raises:
+        None.
+    """
     if not args:
         return False
     if args[0].lower() in _CAT_TRIGGERS:
@@ -153,6 +306,23 @@ def _is_cat_intent(args: list[str]) -> bool:
 
 
 def parse_intent(args: list[str]) -> Intent:
+    """Classify a tokenized prompt into a structured Intent.
+
+    Verb-detection order matters: cat is checked before list because
+    "show contents" prefixes both; the remaining branches fall through
+    to a heuristic based on the first verb. This function is pure — no
+    I/O, no filesystem access — so it can be unit-tested in isolation.
+
+    Args:
+        args: Tokenized user prompt (CLI argv minus flags).
+
+    Returns:
+        A populated Intent. The verb defaults to "other" when nothing
+        matches, which main.py treats as move/copy fallthrough.
+
+    Raises:
+        None.
+    """
     if _is_cat_intent(args):
         return Intent(
             verb="cat", args=args, filtered_args=args,

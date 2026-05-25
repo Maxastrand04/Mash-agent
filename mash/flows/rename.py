@@ -8,6 +8,27 @@ from mash.intent import _STOP_WORDS
 def _confirm_extension_change(
     before_path: str, after_token: str, before_ext: str, after_ext: str, kind: str, console,
 ) -> str | None:
+    """Prompt the user to reconcile an extension change during rename.
+
+    Two reconciliation kinds are distinguished: "different_extension"
+    (before and after both have extensions, but they differ) and the
+    add-extension case (before had none, after introduces one). The
+    user can keep the original, accept the new, or cancel.
+
+    Args:
+        before_path: Existing filesystem path being renamed.
+        after_token: User-supplied new name.
+        before_ext: Original extension including dot, or empty.
+        after_ext: New extension including dot, or empty.
+        kind: "different_extension" or the add-extension case.
+        console: Console helper for prompts.
+
+    Returns:
+        The final filename to use, or None if the user cancels.
+
+    Raises:
+        None.
+    """
     stem_after = os.path.splitext(after_token)[0]
     if kind == "different_extension":
         keep_option = stem_after + before_ext
@@ -49,7 +70,27 @@ def _confirm_extension_change(
         return None
 
 
-def rename_flow(intent, console, llm, context) -> str | None:
+def rename_flow(intent, console, llm, disambig, context) -> str | None:
+    """Orchestrate the rename intent.
+
+    Resolves the source, reconciles any extension change with the user,
+    asks the LLM for a rename command, then forces the target name onto
+    the command via apply_rename so the LLM's output cannot drift from
+    the user's chosen filename.
+
+    Args:
+        intent: Parsed Intent describing the user request.
+        console: Console helper for prompts and I/O.
+        llm: LLMClient used to translate the prompt to a shell command.
+        disambig: Disambiguation strategy passed through to selection.
+        context: Directory tree string supplied to the LLM and resolvers.
+
+    Returns:
+        The final shell command, or None on cancel / empty LLM output.
+
+    Raises:
+        None.
+    """
     seen: dict[str, None] = {}
     for word in intent.filtered_args:
         if word.lower() not in _STOP_WORDS:
@@ -60,7 +101,7 @@ def rename_flow(intent, console, llm, context) -> str | None:
     source_query = next(
         (w for w in intent.filtered_args if w.lower() not in _STOP_WORDS), None
     )
-    resolved = select_source(source_candidates, context, console, query=source_query)
+    resolved = select_source(source_candidates, context, console, disambig, query=source_query)
     if resolved is None and not (console.yes or console.dry_run):
         print("Cancelled.")
         return None

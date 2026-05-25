@@ -157,3 +157,10 @@ mash/
 - Sub-packages re-export through `__init__.py`.
 - Consumers import from the package, not individual files.
 - No module imports from `flows/` or `main.py` except `main.py` itself.
+
+## Intentional behaviours
+
+- **`create` flow** — single bare tokens (no extension, no path separator) intentionally fall through to the LLM / "give file a name" state rather than being auto-treated as filenames. Test agents have flagged this as a bug; it is deliberate.
+- **`selection/destination`** — always renders a menu, even when there are 0 or 1 matches. No auto-return shortcut on low hit counts; the user is always given an explicit choice.
+- **`pick_from_disambig`** (and the new `Disambig.pick_from_hits`) — always shows a menu regardless of hit count. Single-hit auto-selection is intentionally avoided so the user confirms the target.
+- **`files/context`** — uses `find` only when building the directory context. A `tree`-first variant is a planned feature tracked as a separate work item, not a current bug.

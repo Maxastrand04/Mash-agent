@@ -3,34 +3,63 @@ from mash.helpers.selection import select_source
 from mash.intent import _STOP_WORDS
 
 
-def _open_cat_not_found_menu(verb, context, console, run_with_args_fn) -> str | None:
+def _open_cat_not_found_menu(verb, context, console, disambig, run_with_args_fn) -> str | None:
+    """Recovery loop when the user's open/cat target can't be resolved.
+
+    Asks for a corrected term via the disambig strategy and retries
+    resolution until a candidate emerges or the user cancels.
+
+    Args:
+        verb: "open" or "cat" (kept for future telemetry; unused today).
+        context: Directory tree string for resolver calls.
+        console: Console helper; consulted for yes/dry_run early-exit.
+        disambig: Disambiguation strategy for the not-found prompt.
+        run_with_args_fn: Re-entry callback (kept for signature parity).
+
+    Returns:
+        A resolved path, or None on cancel / non-interactive mode.
+
+    Raises:
+        None.
+    """
     while True:
         if console.yes or console.dry_run:
             return None
-        prompt_str = console.render_menu(
-            "Mash did not find a matching file, choose how to proceed:",
-            ["search for file", "cancel"],
-            "Select option [1-2], Enter to cancel, type another prompt:",
-        )
-        answer = console.ask_input(prompt_str)
-        if not answer or answer == "2":
+        kind, value = disambig.pick_not_found(term=None)
+        if kind == "cancelled":
             return None
-        if answer == "1":
-            term = console.ask_input("\nSearch term: ")
-            if not term:
+        term = value
+        candidates = resolve_paths(context, term)
+        if candidates:
+            resolved = select_source(candidates, context, console, disambig, query=term)
+            if resolved is None:
                 return None
-            candidates = resolve_paths(context, term)
-            if candidates:
-                resolved = select_source(candidates, context, console, query=term)
-                if resolved is None:
-                    return None
-                return resolved
-            continue
-        run_with_args_fn(answer.split())
-        return None
+            return resolved
+        continue
 
 
-def open_cat_flow(intent, console, llm, context, run_with_args_fn) -> str | None:
+def open_cat_flow(intent, console, llm, disambig, context, run_with_args_fn) -> str | None:
+    """Orchestrate the open and cat intents.
+
+    Builds the shell command deterministically (`open <path>` or
+    `cat <path>`) without an LLM call — these verbs have no semantic
+    ambiguity once the path is resolved. Strips the "show contents of"
+    prefix so users can phrase cat naturally.
+
+    Args:
+        intent: Parsed Intent describing the user request.
+        console: Console helper for prompts and confirmation.
+        llm: LLMClient (accepted for signature parity; not invoked).
+        disambig: Disambiguation strategy for source selection.
+        context: Directory tree string for resolver calls.
+        run_with_args_fn: Re-entry callback for the not-found loop.
+
+    Returns:
+        A shell command string, or None on cancel.
+
+    Raises:
+        None.
+    """
     verb = "cat" if intent.verb == "cat" else "open"
     args = intent.args
 
@@ -46,9 +75,9 @@ def open_cat_flow(intent, console, llm, context, run_with_args_fn) -> str | None
     candidates = list(seen)
     first_query = next((w for w in rest if w.lower() not in _STOP_WORDS), None)
     if not candidates:
-        resolved = _open_cat_not_found_menu(verb, context, console, run_with_args_fn)
+        resolved = _open_cat_not_found_menu(verb, context, console, disambig, run_with_args_fn)
     else:
-        resolved = select_source(candidates, context, console, query=first_query)
+        resolved = select_source(candidates, context, console, disambig, query=first_query)
     if resolved is None:
         print("Cancelled.")
         return None

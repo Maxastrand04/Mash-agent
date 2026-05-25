@@ -2,7 +2,23 @@ import ollama
 from mash.helpers.commands import COMMANDS_LIST, TEMPLATES_LIST
 
 
+class LLMError(Exception):
+    """Raised when the underlying ollama.chat call fails.
+
+    Wraps the original exception via `raise … from e` so callers can
+    catch a single type without depending on ollama internals.
+    """
+    pass
+
+
 class LLMClient:
+    """Wrapper around a local ollama model for command generation.
+
+    Encapsulates the SYSTEM_PROMPT so flows only have to pass user-level
+    inputs, and centralizes prompt construction so resolved paths reach
+    the model in a uniform schema.
+    """
+
     SYSTEM_PROMPT = (
         "You are a bash command generator. "
         "Output only a single bash command with no explanation, "
@@ -41,6 +57,17 @@ class LLMClient:
     )
 
     def __init__(self, model: str = "qwen2.5-coder:7b"):
+        """Bind the client to a specific ollama model.
+
+        Args:
+            model: ollama model tag to send requests to.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
         self.model = model
 
     def ask(
@@ -53,6 +80,29 @@ class LLMClient:
         source_type: str | None = None,
         after: str | None = None,
     ) -> str:
+        """Send a single chat-completion request and return the bash command.
+
+        Resolved paths are injected into the user message as labelled lines
+        so the model can quote them verbatim — the SYSTEM_PROMPT forbids
+        modifying them, and the downstream sanitizers force-apply them
+        even if the model deviates.
+
+        Args:
+            prompt: Raw natural-language request from the user.
+            context: Directory tree string from get_directory_context.
+            resolved: User-disambiguated source path, if any.
+            destination: User-disambiguated destination directory, if any.
+            filename: Final filename for create flows, if any.
+            source_type: "file", "directory", or "unknown" — drives the
+                file-vs-folder template choice on the LLM side.
+            after: Target name for rename flows.
+
+        Returns:
+            The model's response stripped of surrounding whitespace.
+
+        Raises:
+            LLMError: Wrapped failure from ollama.chat.
+        """
         extra = ""
         if resolved:
             extra += f"\nResolved path: {resolved}"
@@ -69,11 +119,15 @@ class LLMClient:
             f"{extra}\n\n"
             f"User request: {prompt}"
         )
-        response = ollama.chat(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": full_prompt},
-            ],
-        )
+        try:
+            response = ollama.chat(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "user", "content": full_prompt},
+                ],
+            )
+        except Exception as e:
+            raise LLMError("ollama.chat failed") from e
+        # Strip trailing/leading whitespace and newlines so downstream command parsing sees a clean bash command.
         return response.message.content.strip()

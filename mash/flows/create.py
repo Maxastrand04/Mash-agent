@@ -10,6 +10,19 @@ from mash.intent import _STOP_WORDS, _looks_like_filename, _detect_new_filename
 
 
 def _ask_create_kind(console) -> str | None:
+    """Disambiguate file-vs-folder when the intent parser couldn't decide.
+
+    Args:
+        console: Console helper used for menu rendering and input.
+
+    Returns:
+        "file" or "folder" on a valid selection; None on cancel or
+        unrecognized input. In non-interactive (yes/dry_run) mode,
+        defaults to "file" without prompting.
+
+    Raises:
+        None.
+    """
     if console.yes or console.dry_run:
         return "file"
     prompt_str = console.render_menu(
@@ -28,6 +41,22 @@ def _ask_create_kind(console) -> str | None:
 
 
 def _pick_extension(context: str, console) -> str | None:
+    """Interactively pick a file extension, biased toward the current directory.
+
+    Extensions already present in the directory are offered as a numbered
+    menu so the new file blends with siblings; falls back to free-text entry
+    validated against EXTENSION_MAP.
+
+    Args:
+        context: Directory tree string used to harvest existing extensions.
+        console: Console helper for prompting.
+
+    Returns:
+        The chosen extension without a leading dot, or None on cancel.
+
+    Raises:
+        None.
+    """
     dir_exts = collect_extensions(context)
     valid_set = set(dir_exts) | {v.lstrip(".") for v in EXTENSION_MAP.values()}
 
@@ -66,13 +95,52 @@ def _pick_extension(context: str, console) -> str | None:
 
 
 def _pick_extension_auto(context: str, console) -> str | None:
+    """Non-interactive wrapper around _pick_extension.
+
+    In yes/dry_run mode picks the most common existing extension in the
+    directory (or "txt" if none exist) so flows can run unattended.
+
+    Args:
+        context: Directory tree string used to harvest existing extensions.
+        console: Console helper; consulted only for the yes/dry_run flags.
+
+    Returns:
+        The chosen extension without a leading dot, or None on cancel
+        in interactive mode.
+
+    Raises:
+        None.
+    """
     if console.yes or console.dry_run:
         exts = collect_extensions(context)
         return exts[0] if exts else "txt"
     return _pick_extension(context, console)
 
 
-def create_flow(intent, console, llm, context) -> str | None:
+def create_flow(intent, console, llm, disambig, context) -> str | None:
+    """Orchestrate the create-file / create-folder intent.
+
+    Walks the intent's args to extract a bare filename and destination,
+    resolves the destination (offering to mkdir it), picks an extension
+    when the bare path is unqualified, formats the filename through the
+    snake/kebab/camel chooser, then asks the LLM for a shell command and
+    rewrites it with a deterministic `touch` / `mkdir -p` form so the
+    final command is predictable regardless of LLM output.
+
+    Args:
+        intent: Parsed Intent describing the user request.
+        console: Console helper for prompts and I/O.
+        llm: LLMClient used to translate the prompt to a shell command.
+        disambig: Disambiguation strategy passed through to selection.
+        context: Directory tree string supplied to the LLM and resolvers.
+
+    Returns:
+        A shell command string ready to run, or None if the user cancels
+        or the LLM returns nothing.
+
+    Raises:
+        None.
+    """
     args = intent.args
     dest_token = intent.dest_token
     dest_idx_val = None
@@ -110,7 +178,7 @@ def create_flow(intent, console, llm, context) -> str | None:
 
     dest_candidates = resolve_dirs(context, dest_token) if dest_token is not None else []
     destination, create_destination = select_destination(
-        dest_candidates, context, console, dest_token,
+        dest_candidates, context, console, disambig, dest_token,
         for_create=True,
     )
     if destination is None:

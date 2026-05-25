@@ -5,7 +5,28 @@ from mash.helpers.commands import normalize_template_verb, apply_source, apply_d
 from mash.intent import _STOP_WORDS
 
 
-def move_copy_flow(intent, console, llm, context) -> str | None:
+def move_copy_flow(intent, console, llm, disambig, context) -> str | None:
+    """Orchestrate the move and copy intents.
+
+    Same shape for both verbs — the distinction is whether the LLM
+    prompt and downstream sanitizers see "moved" or "copied" as the
+    action verb. Strips spurious mkdir segments and recursive flags so
+    files don't accidentally take `-r`.
+
+    Args:
+        intent: Parsed Intent describing the user request.
+        console: Console helper for prompts and I/O.
+        llm: LLMClient used to translate the prompt to a shell command.
+        disambig: Disambiguation strategy passed through to selection.
+        context: Directory tree string supplied to the LLM and resolvers.
+
+    Returns:
+        The final shell command, or None if the user cancels or the LLM
+        returns nothing.
+
+    Raises:
+        None.
+    """
     seen: dict[str, None] = {}
     for word in intent.filtered_args:
         if word.lower() not in _STOP_WORDS:
@@ -16,7 +37,7 @@ def move_copy_flow(intent, console, llm, context) -> str | None:
     source_query = next(
         (w for w in intent.filtered_args if w.lower() not in _STOP_WORDS), None
     )
-    resolved = select_source(source_candidates, context, console, query=source_query)
+    resolved = select_source(source_candidates, context, console, disambig, query=source_query)
     if resolved is None and not (console.yes or console.dry_run):
         print("Cancelled.")
         return None
@@ -32,7 +53,7 @@ def move_copy_flow(intent, console, llm, context) -> str | None:
     action_verb = "copied" if is_copy else "moved"
     dest_candidates = resolve_dirs(context, intent.dest_token) if intent.dest_token is not None else []
     destination, create_destination = select_destination(
-        dest_candidates, context, console, intent.dest_token,
+        dest_candidates, context, console, disambig, intent.dest_token,
         for_create=False, action_verb=action_verb,
     )
     if destination is None:
