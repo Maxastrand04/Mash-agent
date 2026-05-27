@@ -1,0 +1,5 @@
+
+[dry-run] Auto-selected: ./reports/summary.pdf
+
+Run: open ./reports/summary.pdf
+[dry-run] command not executed.
