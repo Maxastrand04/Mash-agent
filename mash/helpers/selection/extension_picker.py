@@ -22,11 +22,11 @@ class ExtensionPicker:
         }
 
         if directory_extensions:
-            self.console.print_info("\nWhat file extension?\n")
-            self.console.render_menu([f".{extension}" for extension in directory_extensions])
-            prompt = (
-                f"\nSelect extension [1-{len(directory_extensions)}], "
-                "type one manually (with or without dot), or Enter to cancel: "
+            prompt = self.console.render_menu(
+                "What file extension?",
+                [f".{extension}" for extension in directory_extensions],
+                f"Select extension [1-{len(directory_extensions)}], "
+                "type one manually (with or without dot), or Enter to cancel:",
             )
         else:
             prompt = "\nType a file extension (with or without dot), or Enter to cancel: "
