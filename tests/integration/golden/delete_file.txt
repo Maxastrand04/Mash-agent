@@ -1,0 +1,5 @@
+
+[dry-run] Auto-selected: ./archive/notes.txt
+
+Run: rm ./archive/notes.txt
+[dry-run] command not executed.

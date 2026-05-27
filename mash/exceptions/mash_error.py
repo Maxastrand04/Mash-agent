@@ -1,0 +1,2 @@
+class MashError(Exception):
+    pass

@@ -155,7 +155,7 @@ class Console:
         return answer == "y"
 
     def confirm_and_run(
-        self, cmd: str, delete_path: str | None = None,
+        self, command: str, delete_path: str | None = None,
     ) -> None:
         """Show the command, confirm, then execute (unless dry_run).
 
@@ -164,7 +164,7 @@ class Console:
         the path, one for the command). In yes mode both are skipped.
 
         Args:
-            cmd: Shell command to execute via /bin/sh.
+            command: Shell command to execute via /bin/sh.
             delete_path: When set, triggers an additional delete confirm
                 prompt and short-circuits on rejection.
 
@@ -177,18 +177,18 @@ class Console:
         if delete_path and not self.confirm_action("delete", self.abs_path(delete_path)):
             print("Cancelled.")
             return
-        print(f"\nRun: {cmd}")
+        print(f"\nRun: {command}")
         if self.dry_run:
             print("[dry-run] command not executed.")
             return
         if self.yes:
-            subprocess.run(cmd, shell=True)
+            subprocess.run(command, shell=True)
             return
         try:
             answer = input("[y/N] ").strip().lower()
         except EOFError:
             answer = ""
         if answer == "y":
-            subprocess.run(cmd, shell=True)
+            subprocess.run(command, shell=True)
         else:
             print("Cancelled.")

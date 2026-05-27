@@ -102,61 +102,85 @@ The new name in a rename, or the filename/folder name being created.
 ```
 mash/
   __init__.py
-  main.py                          — parse args, parse intent, dispatch to flow, confirm_and_run
-  intent.py                        — Intent dataclass + parse_intent() factory (pure)
+  mash_cli.py                      (class MashCLI)       — CLI entry point, top-level exception catch, verb dispatch
+  intent.py                        (class Intent)        — @dataclass + @classmethod parse (pure, no I/O)
+  exceptions/
+    __init__.py
+    mash_error.py                  (class MashError)
+    user_cancelled.py              (class UserCancelled)
+    source_not_found.py            (class SourceNotFound)
+    destination_not_found.py       (class DestinationNotFound)
+    llm_unavailable.py             (class LLMUnavailable)
+    invalid_extension.py           (class InvalidExtension)
   helpers/
     __init__.py
-    console.py                     — Console class (thin I/O: menus, prompts, yes/dry_run)
-    llm.py                         — LLMClient class (model, SYSTEM_PROMPT, ask)
+    console.py                     (class Console)       — thin I/O: menus, prompts, yes/dry_run, confirm_and_run
+    llm_client.py                  (class LLMClient)     — model, SYSTEM_PROMPT, ask; raises LLMUnavailable
     commands/
-      __init__.py                  — re-exports from submodules
-      sanitize.py                  — pure command transforms
-      templates.py                 — hardcoded bash templates (moved from mash/)
-      reference.py                 — shell command reference list (was mash/commands.py)
+      __init__.py
+      command_sanitizer.py         (class CommandSanitizer)   — pure @staticmethod command transforms
+      command_templates.py         (class CommandTemplates)   — hardcoded bash templates
+      command_reference.py         (class CommandReference)   — shell command reference list
     files/
-      __init__.py                  — re-exports from submodules
-      extension.py                 — EXTENSION_MAP, reconcile, collect, format (pure)
-      resolver.py                  — resolve_paths, resolve_dirs (moved from mash/, unchanged)
-      context.py                   — get_directory_context()
+      __init__.py
+      extensions.py                (class Extensions)    — EXTENSION_MAP, collect, from_prompt, reconcile_rename
+      path_resolver.py             (class PathResolver)  — resolve_paths, resolve_dirs (fuzzy matching)
+      directory_context.py         (class DirectoryContext) — @classmethod get (directory tree string)
     selection/
-      __init__.py                  — re-exports select_source, select_destination, _pick_from_disambig
-      source.py                    — select_source (uses Console + resolver)
-      destination.py               — select_destination (uses Console + resolver)
+      __init__.py
+      disambiguator.py             (class Disambiguator) — pick_from_hits, pick_with_actions
+      source_selector.py           (class SourceSelector)      — raises UserCancelled / SourceNotFound
+      destination_selector.py      (class DestinationSelector) — raises UserCancelled / DestinationNotFound
+      create_kind_picker.py        (class CreateKindPicker)    — raises UserCancelled
+      extension_picker.py          (class ExtensionPicker)     — raises UserCancelled / InvalidExtension
+      rename_extension_reconciler.py (class RenameExtensionReconciler) — raises UserCancelled
   flows/
-    __init__.py                    — re-exports all flow functions
-    move_copy.py                   — move/copy flow
-    rename.py                      — rename flow
-    delete.py                      — delete flow
-    create.py                      — create flow
-    list.py                        — list flow + scoped_context, list_entries, scope_label helpers
-    open_cat.py                    — open/cat flow
+    __init__.py
+    move_copy_flow.py              (class MoveCopyFlow)
+    rename_flow.py                 (class RenameFlow)
+    delete_flow.py                 (class DeleteFlow)
+    create_flow.py                 (class CreateFlow)
+    open_cat_flow.py               (class OpenCatFlow)
+    list_flow.py                   (class ListFlow)      — public entry point for list intent
+    browse_mode.py                 (class BrowseMode)    — ls-and-menu loop
+    action_menu.py                 (class ActionMenu)    — per-entry action picker
+    list_scope.py                  (class ListScope)     — scoped context / list_entries / scope_label
+scripts/
+  check_conventions.py             (class ConventionChecker) — AC-1 + AC-3 AST checks
 ```
 
 ## Program flow
 
-1. `main.py` parses CLI args (`--yes`, `--dry-run`, remaining words).
-2. `parse_intent(args)` returns an `Intent` dataclass — pure extraction, no I/O.
-3. `main.py` builds `Console(yes, dry_run)`, `LLMClient()`, calls `get_directory_context()`.
-4. `main.py` dispatches to the matching flow function based on `Intent.verb`.
-5. Each flow orchestrates its lifecycle: source/dest selection, LLM call, post-processing with sanitize helpers, and returns a `str | None` (the final shell command).
-6. `main.py` calls `console.confirm_and_run(cmd)`.
+1. `MashCLI.main()` is the entry point (pyproject.toml `[project.scripts]`).
+2. `MashCLI.run()` parses CLI args (`--yes`, `--dry-run`, remaining words), calls `_run_with_args`.
+3. `_run_with_args` calls `Intent.parse(args)` — pure extraction, no I/O.
+4. Collaborators are constructed with DI: `Console`, `LLMClient`, `Disambiguator`, selectors, pickers.
+5. `_run_with_args` dispatches to the matching flow via verb (`if intent.verb == ...`).
+6. Each flow orchestrates its lifecycle: source/dest selection, LLM call, command post-processing; returns a command string or `None`.
+7. `MashCLI` calls `console.confirm_and_run(cmd)`.
+8. `MashCLI.run` catches `LLMUnavailable` (friendly message + exit 1) and `MashError` (safety net).
 
 ## Layer responsibilities
 
-- **`Intent`** — pure data, no I/O. Extracts verb, args, dest_token, rename_target, create flags from CLI args.
-- **`Console`** — thin I/O boundary. Owns `yes`/`dry_run` flags. Provides: render_menu, ask_input, confirm_yes_no, confirm_action, confirm_and_run, abs, cwd_label.
-- **`LLMClient`** — LLM boundary. Holds model name, SYSTEM_PROMPT. Single `ask()` method.
-- **`helpers/commands/`** — pure command transforms (sanitize) + reference data (templates, command list).
-- **`helpers/files/`** — pure file logic (extensions, formatting) + resolver (fuzzy matching) + context (directory tree).
-- **`helpers/selection/`** — source/destination selection business logic. Uses Console for I/O, resolver for matching.
-- **`flows/`** — per-intent orchestration. Each flow owns its full lifecycle and returns a command string.
-- **`main.py`** — thin delegator. No business logic.
+- **`exceptions/`** — exception hierarchy only. No logic.
+- **`Intent`** — pure data, no I/O. Extracts verb, args, dest_token, rename_target, create flags.
+- **`Console`** — thin I/O boundary. Owns `yes`/`dry_run` flags. Raises `UserCancelled` when user declines.
+- **`LLMClient`** — LLM boundary. Raises `LLMUnavailable` on failure.
+- **`helpers/commands/`** — pure command transforms (`CommandSanitizer`) + reference data (`CommandTemplates`, `CommandReference`). All stateless (`@staticmethod` / `@classmethod`).
+- **`helpers/files/`** — pure file logic (`Extensions`) + fuzzy matching (`PathResolver`) + directory tree (`DirectoryContext`). All stateless.
+- **`helpers/selection/`** — source/destination selection business logic. Stateful (hold `Console` + `Disambiguator`). Raise named exceptions on cancel/not-found.
+- **`flows/`** — per-intent orchestration. Stateful (hold all collaborators via DI). Each flow catches `UserCancelled` at its boundary and returns `None`.
+- **`MashCLI`** — thin delegator + top-level safety net. No business logic.
 
-## Import rules
+## Import layers
 
-- Sub-packages re-export through `__init__.py`.
-- Consumers import from the package, not individual files.
-- No module imports from `flows/` or `main.py` except `main.py` itself.
+Bottom to top: `exceptions/` → `intent.py` + `helpers/files/` + `helpers/commands/` → `helpers/console.py` + `helpers/llm_client.py` → `helpers/selection/` → `flows/` → `mash_cli.py`. Each layer imports only from layers below. No cycles.
+
+## Naming and OOP conventions
+
+**One class per file, file name matches class name.** Every `.py` under `mash/**` (excluding `__init__.py`) defines exactly one class. File name is the snake_case form of the class name.
+
+**No abbreviations.** All identifiers use full descriptive words: `extension` not `ext`, `destination` not `dest`, `command` not `cmd`, `source` not `src`, `directory` not `dir`. Loop counters `i`/`j`/`k` and `*args`/`**kwargs` are allowed. Enforced via PR review; `scripts/check_conventions.py` enforces the OOP and sentinel-return rules automatically.
 
 ## Intentional behaviours
 
